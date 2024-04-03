@@ -19,6 +19,6 @@ Code created by: <a href="https://www.researchgate.net/profile/Ismael-Soto-4">Is
 [mail]: mailto:isma-sa@hotmail.com
 
 Reproducible code:
-- <code>Fran.R</code>
+- <code>R_code.R</code>
 
 
