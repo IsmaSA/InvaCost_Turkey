@@ -1,0 +1,641 @@
+#Invacost Turkey  - Serhan
+# Code by Ismael Soto
+
+suppressMessages({
+  library(dplyr, quiet = TRUE, warn.conflicts = FALSE)
+  library(reshape, quiet = TRUE, warn.conflicts = FALSE)
+  library(ggplot2)
+  library(tidyr)  
+  library(stringr)
+  library(invacost)
+})
+
+
+invacost<- read.csv("InvaCost_Turkey.csv")
+
+## Expand the database
+expanded <- expandYearlyCosts(invacost, #your help file
+                              startcolumn = "Probable_starting_year_adjusted",
+                              endcolumn = "Probable_ending_year_adjusted")
+
+min(expanded$Impact_year)
+max(expanded$Impact_year)
+
+expanded<-expanded %>% filter(Impact_year <= "2022") #Modify as you wish this year
+expanded<-expanded %>% filter(Impact_year >= "1960")             
+expanded$cost <- as.numeric(gsub(",", "", expanded$Cost_estimate_per_year_2017_USD_exchange_rate))
+expanded <- expanded[!is.na(expanded$cost),]
+expanded$cost_bil <- (expanded$cost/1000000000)
+sum(expanded$cost_bil) # 4.104039
+nrow(expanded) # 1656
+
+df <- expanded
+
+setwd("C:/Users/Propietario/Desktop/InvaCost_Turkey")
+df <- read_xlsx("expanded_turkey.xlsx")
+sum(df$cost_bil)
+
+df1 = df %>% filter(Species %in% c("Mnemiopsis leidyi","Halyomorpha halys","Schistocerca gregaria"))
+sum(df1$cost_bil)
+
+
+#### method reliability ####
+a<-df %>% filter(Type_of_cost_merged=="Management") %>% group_by(Management_type) %>% 
+  dplyr::summarise(Total_cost=sum(cost_bil),
+                   n=n())  %>% ungroup()
+
+a<-df %>% group_by(Method_reliability) %>% 
+  dplyr::summarise(Total_cost=sum(cost_bil),
+                   n=n())  %>% ungroup()
+
+#Method_reliability Total_cost     n
+#<chr>                   <dbl> <int>
+#  1 High                4.08    1583
+#  2 Low                0.0231    73
+
+
+result <- a %>%
+  mutate(percentage = round((Total_cost / sum(Total_cost) * 100), 2))
+#Method_reliability Total_cost     n percentage
+#<chr>                   <dbl> <int>      <dbl>
+#  1 High                   4.08    1583      99.4 
+#  2 Low                    0.0231    73       0.56
+
+
+#### Implementation ####
+b<-df %>% group_by(Implementation) %>% 
+  dplyr::summarise(Total_cost=sum(cost_bil),
+                   n=n())
+
+result_b <- b %>%
+  mutate(percentage = round((Total_cost / sum(Total_cost) * 100), 2))
+
+#Implementation Total_cost     n percentage
+#<chr>               <dbl> <int>      <dbl>
+#  1 Observed             4.10  1656        100
+
+
+#### Species costs ####
+
+c <- df %>% 
+  group_by(Species,  Type_of_cost_merged) %>% 
+  summarise(Total_cost = sum(cost_bil), n = n()) %>% mutate(Percentage = Total_cost / sum(Total_cost)* 100 ,
+                                                            cost_mil = Total_cost * 1000,
+                                                            Cost= Total_cost/ 1000000000) %>% 
+  top_n(100, wt = Total_cost) %>% arrange(-Total_cost) # PLease note that here i just select the top 10 species
+
+# Species                 Total_cost     n Percentage
+# <chr>                        <dbl> <int>      <dbl>
+# 1 Diverse/Unspecified        1.88      290     45.9  
+#2 Mnemiopsis leidyi          1.18        2     28.8  
+#3 Halyomorpha halys          0.947      10     23.1  
+#4 Schistocerca gregaria      0.0402     54      0.979
+#5 Carassius gibelio          0.00942   742      0.229
+#6 Lagocephalus sceleratus    0.00871     8      0.212
+#7 Sicyos angulatus           0.00645     6      0.157
+#8 Aedes sp.                  0.00614     7      0.150
+#9 Myocastor coypus           0.00517     6      0.126
+#10 Anoplophora chinensis      0.00501    12      0.122
+
+
+z<- df %>% filter(Type_of_cost_merged =="Management") %>%
+  group_by(Management_type) %>% 
+  summarise(Total_cost = sum(cost_bil), n = n()) 
+
+
+c$LogBin <- cut(c$cost_mil, breaks = c(0, 10, 100, 1000, 10000), labels = c("$10", "$100", "$1000", "$10000"))
+
+ggplot(c, aes(x = LogBin)) +
+  geom_bar(fill = "grey70", alpha = 0.7, color = "black") +
+  labs(
+    x = "Total Cost (million US$)",
+    y = "Number of Species") +
+  theme_bw() +
+  scale_x_discrete(limits = c("$10", "$100", "$1000", "$10000"))
+
+#### Impacted sector ####
+unique(df$Impacted_sector)
+
+d<-df %>% group_by(Impacted_sector) %>% 
+  summarise(Total_cost=sum(cost_bil),
+            n=n()) %>% mutate(Percentage = Total_cost / sum(Total_cost)* 100 )%>% arrange(-Total_cost)
+
+#Impacted_sector           Total_cost     n Percentage
+#<chr>                          <dbl> <int>      <dbl>
+#  1 Agriculture                2.85        512  69.5     
+#2 Fishery                    1.20        835  29.3     
+#3 Public and social welfare  0.0311       42   0.757   
+#4 Healthy                    0.0106        3   0.259   
+#5 Environment                0.00540     233   0.132   
+#6 Health                     0.0000717    17   0.00175 
+#7 Forestry                   0.0000306    14   0.000746
+
+
+#### Type of cost ####
+
+df$Type_of_cost_merged[ df$Type_of_cost_merged == "Harvesting" ] <- "Damage"
+
+e<-df %>% group_by(Type_of_cost_merged) %>% 
+  summarise(Total_cost=sum(cost_bil),
+            n=n())%>% mutate(Percentage = Total_cost / sum(Total_cost)* 100 )%>% arrange(-Total_cost)
+e
+#Type_of_cost_merged Total_cost     n Percentage
+#<chr>                    <dbl> <int>      <dbl>
+#  1 Management          2.89         542  70.4     
+#2 Mixed               1.19         263  28.9     
+#3 Damage              0.0284       841   0.691   
+#4 Unspecified         0.0000334      9   0.000813
+#5 Harvesting          0.00000974     1   0.000237
+
+
+e2<-df %>% group_by(Species, Type_of_cost_merged) %>% 
+  summarise(Total_cost=sum(cost_bil),
+            n=n())%>% mutate(Percentage = Total_cost / sum(Total_cost)* 100 )%>% arrange(-Total_cost)
+
+ggplot(e, aes(x = "", y = Total_cost, fill = Type_of_cost_merged)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") 
+
+
+
+###### Environment IAS #######
+a<-df %>% group_by(Environment_IAS) %>% 
+  dplyr::summarise(Total_cost=sum(cost_bil),
+                   n=n())  %>% ungroup() %>% mutate(Percentage = Total_cost / sum(Total_cost))
+
+ggplot(a, aes(x = "", y = Total_cost, fill = Environment_IAS)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Pie Chart of Environment_IAS based on Total_cost",
+       fill = "Environment Type")
+
+
+###### Family #######
+
+agg_data <- df %>% group_by(Family, Type_of_cost_merged) %>% summarise(x= sum(cost))
+  #aggregate(df$cost_bil, by = list(Family = df$Family), FUN = sum)
+
+
+ggplot(agg_data, aes(x = "", y = x, fill = Family)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y") +
+  theme_minimal() +
+  labs(title = "Costs by Family", x = NULL, y = NULL, fill = "Family")
+
+agg_data_sorted <- agg_data[order(-agg_data$x), ]
+
+agg_data_sorted$Family[agg_data_sorted$Family =="#N/A"] <- "Diverse/Unspecified"
+
+agg_data_sorted %>% group_by(Family) %>% summarise(Cost= sum(x)) %>% arrange(-Cost)
+
+agg_data_sorted$Family <- factor(agg_data_sorted$Family, 
+                              levels = c("Diverse/Unspecified","Bolinopsidae","Pentatomidae","Acrididae",
+                                         "Tetraodontidae", "Cyprinidae", "Cucurbitaceae", 
+                                         "Culicidae", "Myocastoridae","Cerambycidae"))
+
+agg_data_sorted <- agg_data_sorted[!is.na(agg_data_sorted$Family), ]
+agg_data_sorted$millions <- agg_data_sorted$x
+
+#################################
+agg_data_sorted$Family[agg_data_sorted$Family =="Diverse/Unspecified"] <- "Diverse"
+n <- 11
+top_n_families <- head(agg_data_sorted, n)
+agg_top_families <- top_n_families %>%
+  group_by(Family,Type_of_cost_merged) %>%
+  summarise(total_cost = sum(x))
+
+agg_top_families
+agg_top_families$Family[agg_top_families$Family =="Diverse"] <- "Diverse/Unspecified"
+agg_top_families$cost_mil <- agg_top_families$total_cost*1000
+#################################
+
+
+ggplot(agg_data_sorted, aes(x = reorder(Family, -millions), y = millions, fill = Type_of_cost_merged)) +
+  geom_bar(stat = "identity", color = "black", size = 0.25) +
+  labs(
+    x = "Family",
+    y = "US$ millions",
+    fill = "Type of costs") +
+  theme_bw() + 
+  theme(
+    axis.text.x = element_text(angle = 55, vjust = 1, hjust = 1, size = 12),
+    axis.text.y = element_text(size = 14),
+    axis.title.x = element_text(size = 14), 
+    axis.title.y = element_text(size = 14),
+    legend.title = element_text(size = 14)
+  ) +  
+  scale_y_continuous(trans = 'log10', breaks = c(0.1,1,10,100,1000,10000,100000,1000000)) +
+  theme_classic2() +
+  theme(axis.text.x = element_text(angle = 55, vjust = 1, hjust = 1)) +
+  annotation_logticks(sides = "l") +
+  scale_fill_brewer(palette = "Set2")
+
+
+agg_data_sorted<- agg_data_sorted %>% group_by(Family, Type_of_cost_merged) %>% summarise(millions=sum(millions))
+p2<- ggplot(agg_data_sorted, aes(x = Family, y = millions, fill = Type_of_cost_merged)) +
+  geom_col(position = "dodge", width = 0.6, color="black", size= 0.2) +  # Set width here
+  labs(
+    x = "Family",
+    y = "US$ millions",
+    fill = "Type of costs") +
+  theme_bw() + 
+  theme(
+    axis.text.x = element_text(angle = 55, vjust = 1, hjust = 1, size = 12),
+    axis.text.y = element_text(size = 14),
+    axis.title.x = element_text(size = 14), 
+    axis.title.y = element_text(size = 14),
+    legend.title = element_text(size = 14)
+  ) +  
+  scale_y_continuous(trans = 'log10', breaks = c(0.1,1,10,100,1000,10000,100000,1000000,10000000,100000000,1000000000)) +
+  theme_classic2() +
+  theme(axis.text.x = element_text(angle = 55, vjust = 1, hjust = 1)) +
+  annotation_logticks(sides = "l") +
+  scale_fill_brewer(palette = "Set2")
+p2
+
+#### Cost per decade ####
+names(df)
+res <-   summarizeCosts(df,
+                   cost.column = "cost",
+                   in.millions = FALSE,
+                   minimum.year = 1960,
+                   maximum.year = 2022,
+                  year.breaks = seq(1960, 2022, by = 10)) 
+
+res
+
+#Average annual cost of invasive species over time periods
+
+#- Temporal interval of data : [1960, 2022]
+#- Values transformed in US$ million: No
+#- Number of cost estimates: 270 (number of individual year values: 1656)
+##- Cost values in US$ :
+#  o Total cost over the entire period 4,104,038,505.77
+  #o Average annual cost over the entire period 65,143,468.35
+#o Average annual cost over each period
+
+#initial_year final_year time_span       total_cost    annual_cost number_estimates number_year_values
+#1         1966       1975        10     8,956,590.30     895,659.03               14                131
+#2         1976       1985        10     8,956,851.09     895,685.11               14                140
+#3         1986       1995        10     8,956,851.09     895,685.11               14                140
+#4         1996       2005        10    16,551,649.95   1,655,164.99               25                169
+#5         2006       2015        10 2,014,503,168.58 201,450,316.86              108                397
+#6         2016       2022         7 2,040,739,457.98 291,534,208.28              216                601
+
+
+
+###### Extrapolation costs Invacost #########
+setwd("C:/Users/Propietario/Desktop/InvaCost_Turkey")
+df <- read_xlsx("expanded_turkey.xlsx")
+names(df)
+
+df$lower_limit<-df$upper_limit<-0
+for(i in unique(df$Impact_year)){
+  df$lower_limit[which(df$Impact_year==i)]<-quantile(df$cost_bil[which(df$Impact_year==i)], 0.25) - (3 * (quantile(df$cost_bil[which(df$Impact_year==i)], 0.75)-quantile(df$cost_bil[which(df$Impact_year==i)],0.25)))
+  df$upper_limit[which(df$Impact_year==i)]<-quantile(df$cost_bil[which(df$Impact_year==i)], 0.75) + (3 * (quantile(df$cost_bil[which(df$Impact_year==i)], 0.75)-quantile(df$cost_bil[which(df$Impact_year==i)],0.25)))
+}
+
+expanded_cut<-subset(df, cost_bil <= upper_limit)
+sum(expanded_cut$cost_bil) # 0.015565
+
+#TEMPORAL EXTRAPOLATION-----
+#Robust Regression####
+#delete last 3 years to delete lag time
+extrapolation<- expanded_cut %>% filter(Impact_year <= "2019")
+#Robust Regression extrapolation
+#costs
+df <- extrapolation %>% group_by(Impact_year) %>% summarise(Cost= sum(cost_bil)) 
+df2<-df[!(df$Impact_year<1960),]
+df2$Cost <- df2$Cost *1000000
+
+df2<-df2 %>% filter(!Impact_year < 1990)
+
+robust.linear <- robustbase::lmrob(Cost~ Impact_year, maxit.scale=1000, data = df2)
+#plot(robust.linear)
+confidence.interval = 0.95
+prediction.years <- data.frame(Impact_year = 1990:2030)
+pred.robust.linear <- try(predict(robust.linear, 
+                                  prediction.years,
+                                  interval = "confidence", 
+                                  level = confidence.interval),
+                          silent = TRUE)
+
+rownames(pred.robust.linear) <- prediction.years[, 1]
+
+# Robust regression - quadratic effect
+#incomplete.year.threshold = NULL
+#incomplete.year.threshold <- maximum.year + 1
+#yearly.cost$transf.cost <- yearly.cost$Annual.cost
+#yearly.cost.calibration <- yearly.cost[-which(yearly.cost[, "Year"] >= incomplete.year.threshold), ]
+robust.quadratic <- robustbase::lmrob(Cost ~ Impact_year + I(Impact_year^2), maxit.scale=900, data = df2,
+                                      cov = ".vcov.w") # Covariance matrix estimated using asymptotic normality of the coefficients 
+# See ?lmrob and Koller & Stahel 2011 
+pred.robust.quadratic <- try(predict(robust.quadratic,
+                                     prediction.years,
+                                     interval = "confidence", 
+                                     level = confidence.interval),
+                             silent = TRUE)
+
+rownames(pred.robust.quadratic) <- prediction.years[, 1]
+
+#model.RMSE["robust.quadratic", "RMSE.calibration"] <- sqrt(mean(residuals(robust.quadratic)^2))
+#model.RMSE["robust.quadratic", "RMSE.alldata"] <- sqrt(
+#  mean((pred.robust.quadratic[match(yearly.cost$Year, rownames(pred.robust.quadratic)), 
+#                              "fit"] - yearly.cost$transf.cost)^2))
+#plotting 
+new_data_linear <- bind_cols(prediction.years, pred.robust.linear)
+colnames(new_data_linear) <- c("Impact_year", "fit_linear", "lwr_linear", "upr_linear")
+new_data_quadratic <- bind_cols(prediction.years, pred.robust.quadratic)
+colnames(new_data_quadratic) <- c("Impact_year", "fit_quadratic", "lwr_quadratic", "upr_quadratic")
+
+new_data<-left_join(new_data_linear,new_data_quadratic)
+
+myarrow=arrow(angle = 15, type = "closed")
+
+ggplot() +  # Remove the global aesthetics
+  geom_point(data = df2, aes(x = Impact_year, y = Cost)) +  # Specify aesthetics here
+  geom_line(data = new_data, aes(x = Impact_year, y = fit_linear), 
+            arrow = myarrow, colour = "blue", size = 1, alpha = 0.95, show.legend = TRUE) +
+  geom_ribbon(data = new_data,
+              aes(x = Impact_year, ymin = lwr_linear, ymax = upr_linear), fill = "blue", alpha = 0.2) +
+  geom_line(data = new_data, aes(x = Impact_year, y = fit_quadratic), 
+            linetype = "dashed", arrow = myarrow, colour = "orange", size = 1, alpha = 0.95, show.legend = TRUE) +
+  geom_ribbon(data = new_data,
+              aes(x = Impact_year, ymin = lwr_quadratic, ymax = upr_quadratic), fill = "orange", alpha = 0.2) +
+  xlab("Year") + theme_bw()+
+  ylab("Annual cost in US$ millions") +
+  scale_x_continuous(limits=c(1990, 2030), breaks = seq(1990, 2030, by=10)) +
+  theme(legend.position = "top") +
+  annotation_logticks(sides = "l")
+
+
+
+ggplot(mapping = aes(x = Impact_year, y = Cost)) +
+  geom_point(data = df2, aes())+
+  geom_line(data = new_data, aes(y = fit_linear, x = Impact_year), arrow=myarrow, colour = "blue",
+            size = 1, alpha = 0.95, show.legend = T)+
+  geom_ribbon(data = new_data,
+              mapping = aes(ymin = lwr_linear, ymax = upr_linear, x = Impact_year), fill = "blue",
+              inherit.aes = FALSE, alpha = 0.2)+
+  geom_line(data = new_data, aes(y = fit_quadratic, x = Impact_year), linetype = "dashed", arrow=myarrow, colour = "orange",
+            size = 1, alpha = 0.95, show.legend = T)+
+  geom_ribbon(data = new_data,
+              mapping = aes(ymin = lwr_quadratic, ymax = upr_quadratic, x = Impact_year), fill = "orange",
+              inherit.aes = FALSE, alpha = 0.2)+
+  xlab("Year") + ylab("Total cost in the EU (in US$ 2017 value)")+
+  scale_fill_manual() +
+  coord_cartesian(xlim = c(1990, 2040)) +
+  theme(legend.position = "top") + 
+  #scale_y_continuous(trans = 'log10', breaks = c(0.1,1,10,100,1000,10000,100000,1000000)) +
+  theme_classic2() +
+  annotation_logticks(sides = "l") 
+
+  #theme_ggeffects()+
+  #theme_pubclean()
+
+
+#### Implementation + method reliability ####
+
+a <- a %>% mutate(Source = "Method_reliability", Category = Method_reliability)
+b <- b %>% mutate(Source = "Implementation", Category = Implementation)
+
+combined_data <- bind_rows(a, b)
+
+
+
+# Prepare data for ggplot
+plot_data <- tidyr::gather(combined_data, key = "Metric", value = "Value", Total_cost, n)
+plot_data$Metric <- factor(plot_data$Metric, levels = c("Total_cost", "n"))
+
+ggplot(plot_data, aes(x = Metric, y = Source, size = Value, color = Category)) +
+  geom_point(alpha = 0.6) +
+  scale_size_continuous(range = c(5, 30)) +
+  scale_x_discrete(labels = c("Economic costs (US$)", "Number of entries")) +
+  scale_y_discrete(labels = c("Method Reliability", "Implementation")) +
+  theme_bw() +
+  labs(
+    size = "Value",
+    color = "Category Level"
+  ) +
+  theme(legend.position = "right", 
+        axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        legend.text = element_text(size = 12))
+
+
+# Create the bubble plot
+# Create the bubble plot with modifications
+ggplot(a, aes(x = Method_reliability, y = Category)) +
+  geom_point(aes(size = n, color = Total_cost), alpha = 0.6, stroke = 0.5) +
+  scale_size_continuous(range = c(5, 20), breaks = c(50,100, 1500)) +
+  scale_color_gradient(low = "blue", high = "red") +
+  labs(
+       x = "Method Reliability",
+       y = "Category") +
+  theme_bw()
+
+
+
+
+#### Species Cost plot:  ####
+
+c$Species <- factor(c$Species, 
+                    levels = c("Diverse/Unspecified","Mnemiopsis leidyi","Halyomorpha halys","Schistocerca gregaria",
+                               "Carassius gibelio", "Lagocephalus sceleratus", "Sicyos angulatus", 
+                               "Aedes sp.", "Myocastor coypus","Anoplophora chinensis"))
+
+ggplot(c, aes(x=Species, y=Total_cost)) + 
+  geom_point(size=3) + 
+  geom_segment(aes(x=Species, 
+                   xend=Species, 
+                   y=0, 
+                   yend=Total_cost)) + 
+  scale_y_continuous(trans='log10', breaks = c(0.01,0.1,1,10,100)) + theme_classic2() + theme_cleveland()+ 
+  theme(axis.text.x = element_text(angle=55, vjust=1,hjust=1)) + annotation_logticks(sides = "l")
+
+
+
+# 2.0 Type of cost + loliplot species   ####
+
+merged_data <- inner_join(c, e2, by = "Species") # Adjust the 'by' argument if needed
+
+merged_data$Total_cost_mil <- merged_data$Total_cost.y * 1000000
+merged_data %>% group_by(Species) %>% summarise(Cost=mean(Total_cost.x)) %>% arrange(-Cost)
+
+merged_data$Species <- factor(merged_data$Species, 
+                    levels = c("Diverse/Unspecified","Mnemiopsis leidyi","Halyomorpha halys","Schistocerca gregaria",
+                               "Carassius gibelio", "Lagocephalus sceleratus", "Sicyos angulatus", 
+                               "Aedes sp.", "Myocastor coypus","Anoplophora chinensis"))
+
+merged_data <- merged_data[!is.na(merged_data$Species), ]
+merged_data$millions <- merged_data$Total_cost.y * 1000000000
+p1<- ggplot(merged_data, aes(x = Species, y = millions, fill = Type_of_cost_merged)) +
+  geom_col(position = "dodge", width = 0.6, color="black", size= 0.2) +  # Set width here
+  scale_y_continuous(trans = 'log10', breaks = c(0.1,1,10,100,1000,10000,100000,1000000,10000000,100000000,1000000000 )) +
+  theme_classic2() +
+  theme(axis.text.x = element_text(angle = 55, vjust = 1, hjust = 1)) +
+  annotation_logticks(sides = "l") +
+  ylab("Total cost (US$)") +
+  scale_fill_brewer(palette = "Set2") +
+  scale_x_discrete(labels = c("Diverse/Unspecified",  
+                              expression(italic("Mnemiopsis leidyi")), 
+                              expression(italic("Halyomorpha halys")),
+                              expression(italic("Schistocerca gregaria")),
+                              expression(italic("Carassius gibelio")),
+                              expression(italic("Lagocephalus sceleratus")),
+                              expression(italic("Sicyos angulatus")),
+                              expression(italic("Aedes sp.")),
+                              expression(italic("Myocastor coypus")),
+                              expression(italic("Anoplophora chinensis"))
+  )) +
+  labs(fill = "Type of costs")
+
+
+
+
+p1 + p2
+
+
+
+#### Temporal plot  ####
+res
+expanded_obs <- df[df$Implementation %in% c("Observed"),]
+sum(df$cost_bil)
+
+global.raw.all <- summarizeCosts(df,
+                                 cost.column = "cost",
+                                 in.millions = FALSE,
+                                 minimum.year = 1960,
+                                 maximum.year = 2022,
+                                 year.breaks = seq(1960, 2020, by = 10))    #you may have to use other intervals, but 10 is like the common basis
+global.raw.obs <- summarizeCosts(expanded_obs,
+                                 cost.column = "cost",
+                                 in.millions = FALSE,
+                                 minimum.year = 1960,
+                                 maximum.year = 2022,
+                                 year.breaks = seq(1960, 2020, by = 10))
+
+
+
+global.raw.obs$average.cost.per.period$middle.years <- global.raw.obs$average.cost.per.period$initial_year +
+  (global.raw.obs$average.cost.per.period$final_year -
+     global.raw.obs$average.cost.per.period$initial_year) / 2
+global.raw.all$average.cost.per.period$middle.years <- global.raw.all$average.cost.per.period$initial_year +
+  (global.raw.all$average.cost.per.period$final_year -
+     global.raw.all$average.cost.per.period$initial_year) / 2
+
+all.costs <- rbind(data.frame(global.raw.obs$average.cost.per.period,
+                              cost.type = "Observed"),
+                   data.frame(global.raw.all$average.cost.per.period,
+                              cost.type = "All"))
+all.costs.per.year <- rbind(data.frame(global.raw.obs$cost.per.year,
+                                       cost.type = "Observed"),
+                            data.frame(global.raw.all$cost.per.year,
+                                       cost.type = "All"))
+
+
+all.costs <- rbind(data.frame(res$average.cost.per.period,
+                              cost.type = "Observed"),
+                   data.frame(res$average.cost.per.period,
+                              cost.type = "All"))
+
+ggplot(res) +
+  ylab(paste0("Annual cost in US$")) +
+  geom_point(aes_string(x = "middle.years",
+                        y = "annual_cost",
+                        col = "cost.type"),
+             shape = 15) +
+  geom_line(aes_string(x = "middle.years",
+                       y = "annual_cost",
+                       col = "cost.type"),
+            linetype = 2) +
+  geom_segment(aes_string(x = "initial_year",
+                          xend = "final_year",
+                          y = "annual_cost",
+                          yend = "annual_cost",
+                          col = "cost.type")) +
+  geom_point(data = all.costs.per.year,
+             aes(x = year, y = cost,
+                 size = number_estimates,
+                 col = cost.type),
+             alpha = .6) +
+  xlab("Year") +
+  scale_x_continuous(breaks = global.raw.obs$year.breaks) +
+  scale_size_continuous(name = "Number of estimates\nper year",
+                        breaks = c(1, 5, 20, 50)) +
+  scale_color_manual(name = "Cost estimations",
+                     values = c("Observed" = "red", "color estimation" = "red", "Other" = "blue")) +  # Manual color mapping
+  scale_y_log10(breaks = 10^(-15:15),
+                labels = scales::comma) +
+  annotation_logticks(sides = "l") +
+  theme_bw() +
+  theme(panel.border = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        panel.grid.minor = element_blank(),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12))
+
+
+
+
+### Impacted sector plot ####
+d$Impacted_sector[d$Impacted_sector == "Healthy"] <- "Health"
+
+d$total_cost_label <- paste0(round(d$Total_cost, 2), " (", round(d$Percentage, 2), "%)")
+
+d$label_position = cumsum(d$Total_cost) - 0.5 * d$Total_cost
+
+ggplot(d, aes(x = "", y = Total_cost, fill = Impacted_sector)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar("y") +
+  labs(fill = "Sectors") +
+  theme_void() +  scale_fill_brewer(palette = "Set2") 
+
+
+
+
+
+
+
+serhan = read_xlsx("GlobalAlienSpeciesFirstRecordDatabase_v3.1_freedata.xlsx", sheet = "FirstRecords")
+
+serhan2 = serhan %>% filter(Region == "Turkey")
+
+serhan3  =  serhan2 %>%
+  mutate(LifeForm = case_when(
+    LifeForm == "Algae" ~ "Algae",
+    LifeForm == "Arthropods p.p. (Myriapods, Diplopods etc.)" ~ "Arthropods",
+    LifeForm == "Bacteria and protozoans" ~ "Bacteria and protozoans",
+    LifeForm == "Birds" ~ "Birds",
+    LifeForm == "Bryophytes" ~ "Bryophytes",
+    LifeForm == "Bryozoa" ~ "Bryozoa",
+    LifeForm == "Crustaceans" ~ "Crustaceans",
+    LifeForm == "Fishes" ~ "Fish",
+    LifeForm == "Fungi" ~ "Fungi",
+    LifeForm == "Insects" ~ "Insects",
+    LifeForm == "Invertebrates (excl. Arthropods, Molluscs)" ~ "Invertebrates",
+    LifeForm == "Molluscs" ~ "Molluscs",
+    LifeForm == "Vascular plants" ~ "Vascular plants",
+    LifeForm == "Viruses" ~ "Viruses",
+    TRUE ~ LifeForm  #
+  )) %>%
+  group_by(LifeForm) %>%
+  summarise(Species = n_distinct(TaxonName))
+
+
+ggplot(serhan3, aes(x = reorder(LifeForm, -Species), y = Species)) +
+  geom_bar(stat = "identity", fill = "steelblue", color="black", size= 0.2) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = Species), vjust = -0.3, color = "black", size = 4) +
+  
+  labs(  x = "",
+         y = "Number of non-native species"
+  ) +  theme_bw()+  theme(axis.text.x = element_text(size = 12, color = "black", angle = 45, hjust = 1),
+                          axis.text.y = element_text(size = 12, color = "black"),  # 
+                          axis.line.x = element_line(color = "black"),
+                          axis.line.y = element_line(color = "black"),
+                          axis.title = element_text(size = 14 ))  
+
+
